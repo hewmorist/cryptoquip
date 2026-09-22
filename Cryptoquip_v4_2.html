@@ -1,0 +1,134 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5"><title>Cryptoquip V4.2</title>
+<style>
+body{font-family:system-ui;margin:0;background:#f4f4f4;color:#222}header{position:sticky;top:0;z-index:5;background:#fff;padding:8px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;border-bottom:1px solid #ccc}button,.pick{font:16px system-ui;padding:9px 12px;border:1px solid #999;border-radius:8px;background:#fff}.pick input{position:absolute;width:1px;height:1px;opacity:0}#status{font-size:14px;color:#555}main{max-width:1000px;margin:auto;padding:10px}#paper{display:block;max-width:100%;height:auto;margin:0 auto 18px}#answer{background:#fff;border:1px solid #bbb;border-radius:10px;padding:16px 10px;overflow-x:auto}.title{font-weight:700;margin-bottom:12px}.line{display:flex;flex-wrap:nowrap;align-items:flex-end;min-height:38px;margin:5px 0}.word{display:inline-flex;align-items:flex-end;margin-right:14px}.letter{width:30px;height:34px;box-sizing:border-box;border:1px solid #777;border-radius:4px;text-align:center;font:bold 21px system-ui;text-transform:uppercase;background:#fff;padding:0;margin-right:2px}.letter.same{outline:2px solid #aaa;background:#f0f0f0}.letter.active{outline:3px solid #333;background:#e8e8e8}.punct{font:22px Georgia;margin:0 2px 2px}.help{font-size:14px;color:#555}@media(max-width:600px){main{padding:6px}.letter{width:25px}.word{margin-right:10px}#answer{padding:12px 6px}}@media print{header,.help{display:none!important}body{background:#fff}#answer{border:0}}
+
+#analysis{background:#fff;border:1px solid #bbb;border-radius:10px;padding:14px 12px;margin-top:14px}
+.analysis-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.analysis-grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(230px,.8fr);gap:18px}
+.freqrow{display:grid;grid-template-columns:34px 44px 1fr 54px;gap:7px;align-items:center;padding:3px 5px;border-radius:5px;cursor:pointer}
+.freqrow:hover,.freqrow.sel{background:#eee}
+.bar{height:10px;background:#ddd;border-radius:5px;overflow:hidden}.bar>i{display:block;height:100%;background:#777}
+.mapval{font-weight:700}
+.small{font-size:13px;color:#555}
+.patterns{font:14px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+@media(max-width:650px){.analysis-grid{grid-template-columns:1fr}.freqrow{grid-template-columns:30px 38px 1fr 48px}}
+
+</style></head><body>
+<header><label class="pick">Open Puzzle<input id="open" type="file" accept=".cwd,.json,application/json"></label><button id="resume">Resume Last</button><button id="save">Save Puzzle</button><button id="clear">Clear Answer</button><button id="print">Print</button><span id="status">Open a prepared .cwd puzzle.</span></header>
+<main><img id="paper" alt="Original Cryptoquip puzzle" hidden><section id="answer" hidden><div class="title">ANSWER</div><div id="body"></div></section>
+<section id="analysis" hidden>
+ <div class="analysis-head"><b>CIPHER ANALYSIS</b><span class="small">Tap a cipher letter to highlight its positions.</span></div>
+ <div class="analysis-grid">
+  <div><b>Letter frequency</b><div id="freq"></div></div>
+  <div><b>Structure</b><div id="patterns" class="patterns"></div>
+   <p class="small">English frequency reference: E T A O I N S H R D L U. Short Cryptoquips can vary substantially from this order.</p>
+  </div>
+ </div>
+</section>
+<p class="help">Open the prepared .cwd file. Each box knows its cipher letter. Entering a substitution fills every matching occurrence automatically. Matching cipher positions highlight when selected. Your answer is saved automatically.</p></main>
+<script>
+const $=x=>document.getElementById(x),paper=$('paper'),body=$('body'),answer=$('answer'),status=$('status');
+const KEY='cryptoquip-v4';let image='',structure='',mapping={};const analysis=$('analysis'),freq=$('freq'),patterns=$('patterns');
+function blankMap(){let m={};for(let i=65;i<=90;i++)m[String.fromCharCode(i)]='';return m}
+function auto(){try{localStorage.setItem(KEY,JSON.stringify(state()))}catch(e){}}
+function state(){return{version:4,type:'cryptoquip',image,structure,mapping}}
+function highlight(cipher,active){
+ body.querySelectorAll('.letter').forEach(x=>{
+   x.classList.toggle('same',x.dataset.cipher===cipher);
+   x.classList.toggle('active',x===active);
+ });
+}
+function refresh(cipher){
+ body.querySelectorAll('.letter').forEach(x=>{if(!cipher||x.dataset.cipher===cipher)x.value=mapping[x.dataset.cipher]||''});
+}
+
+function wordPattern(w){
+ let m={},next=1;
+ return [...w].map(c=>{if(!m[c])m[c]=next++;return m[c]}).join('-');
+}
+function selectCipher(c){
+ let first=[...body.querySelectorAll('.letter')].find(x=>x.dataset.cipher===c);
+ if(first){highlight(c,first);first.focus()}
+ document.querySelectorAll('.freqrow').forEach(r=>r.classList.toggle('sel',r.dataset.cipher===c));
+}
+function buildAnalysis(){
+ if(!structure){analysis.hidden=true;return}
+ analysis.hidden=false;
+ let letters=structure.toUpperCase().match(/[A-Z]/g)||[], counts={};
+ letters.forEach(c=>counts[c]=(counts[c]||0)+1);
+ let ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+ let max=ranked.length?ranked[0][1]:1;freq.innerHTML='';
+ ranked.forEach(([c,n])=>{
+   let r=document.createElement('div');r.className='freqrow';r.dataset.cipher=c;
+   r.innerHTML='<b>'+c+'</b><span>'+n+'</span><span class="bar"><i style="width:'+(100*n/max)+'%"></i></span><span class="mapval">→ '+(mapping[c]||'—')+'</span>';
+   r.onclick=()=>selectCipher(c);freq.appendChild(r);
+ });
+ let words=structure.toUpperCase().match(/[A-Z]+/g)||[];
+ let singles=[...new Set(words.filter(w=>w.length===1))];
+ let doubles=[...new Set(words.flatMap(w=>{let a=[];for(let i=1;i<w.length;i++)if(w[i]===w[i-1])a.push(w[i-1]+w[i]);return a}))];
+ let wc={};words.forEach(w=>wc[w]=(wc[w]||0)+1);
+ let repeats=Object.entries(wc).filter(x=>x[1]>1).sort((a,b)=>b[1]-a[1]);
+ let interesting=[...new Set(words.filter(w=>w.length>=3))].map(w=>[w,wordPattern(w)]).filter(([w,p])=>new Set(w).size<w.length).slice(0,10);
+ let lines=[];
+ lines.push('One-letter words: '+(singles.join(', ')||'none'));
+ lines.push('Double letters: '+(doubles.join(', ')||'none'));
+ lines.push('Repeated words: '+(repeats.length?repeats.map(([w,n])=>w+' ×'+n).join(', '):'none'));
+ if(interesting.length)lines.push('Word patterns:\n'+interesting.map(([w,p])=>'  '+w+'  '+p).join('\n'));
+ patterns.textContent=lines.join('\n');
+}
+
+function render(text,mapOrLetters={}){
+ structure=text;mapping=blankMap();
+ // V3 mapping, or import a V2 file's independent letters by taking first nonblank value per cipher.
+ if(mapOrLetters && !Array.isArray(mapOrLetters)) Object.assign(mapping,mapOrLetters);
+ let oldLetters=Array.isArray(mapOrLetters)?mapOrLetters:null, oldIndex=0;
+ body.innerHTML='';
+ text.replace(/\r/g,'').split('\n').forEach(line=>{
+   let row=document.createElement('div');row.className='line';
+   let word=document.createElement('span');word.className='word';
+   let flush=()=>{if(word.childNodes.length){row.appendChild(word);word=document.createElement('span');word.className='word'}};
+   for(let ch of line){
+     if(/[A-Za-z]/.test(ch)){
+       let cipher=ch.toUpperCase(),x=document.createElement('input');
+       if(oldLetters){let ov=(oldLetters[oldIndex++]||'').toUpperCase();if(ov&&!mapping[cipher])mapping[cipher]=ov}
+       x.className='letter';x.maxLength=1;x.inputMode='text';x.autocapitalize='characters';x.spellcheck=false;
+       x.dataset.cipher=cipher;x.setAttribute('aria-label','Cipher '+cipher);x.title='Cipher '+cipher;
+       x.value=mapping[cipher]||'';
+       x.onfocus=()=>highlight(cipher,x);
+       x.onclick=()=>highlight(cipher,x);
+       x.oninput=()=>{
+         let val=(x.value.match(/[A-Za-z]/)||[''])[0].toUpperCase();
+         mapping[cipher]=val;refresh(cipher);highlight(cipher,x);buildAnalysis();auto();
+         if(val){let a=[...body.querySelectorAll('.letter')],i=a.indexOf(x);if(i<a.length-1)a[i+1].focus()}
+       };
+       x.onkeydown=e=>{
+         let a=[...body.querySelectorAll('.letter')],i=a.indexOf(x);
+         if(e.key==='Backspace'){
+           e.preventDefault();
+           if(mapping[cipher]){mapping[cipher]='';refresh(cipher);highlight(cipher,x);buildAnalysis();auto()}
+           else if(i>0)a[i-1].focus();
+         }
+         if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+           let j=i+(e.key==='ArrowLeft'?-1:1);if(j>=0&&j<a.length){e.preventDefault();a[j].focus()}
+         }
+       };
+       word.appendChild(x);
+     } else if(ch===' '||ch==='\t') flush();
+     else {let p=document.createElement('span');p.className='punct';p.textContent=ch;word.appendChild(p)}
+   }
+   flush();body.appendChild(row);
+ });
+ refresh();answer.hidden=!text;buildAnalysis();auto();
+}
+function restore(o){
+ if(!o||o.type!=='cryptoquip')throw Error('Not a Cryptoquip puzzle file.');
+ image=o.image||'';if(image){paper.src=image;paper.hidden=false}else paper.hidden=true;
+ render(o.structure||'',o.mapping || o.letters || {});
+ status.textContent='Puzzle opened.';
+}
+$('open').onchange=e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader;r.onload=()=>{try{restore(JSON.parse(r.result))}catch(err){status.textContent=err.message}};r.readAsText(f)};
+$('resume').onclick=()=>{try{let s=localStorage.getItem(KEY);s?restore(JSON.parse(s)):status.textContent='No saved puzzle on this device.'}catch(e){status.textContent='Could not restore puzzle.'}};
+$('save').onclick=()=>{if(!structure){status.textContent='Open a puzzle first.';return}let b=new Blob([JSON.stringify(state())],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='cryptoquip.cwd';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);status.textContent='Puzzle saved.'};
+$('clear').onclick=()=>{mapping=blankMap();refresh();buildAnalysis();auto();status.textContent='Answer cleared.'};
+$('print').onclick=()=>window.print();
+</script></body></html>
